@@ -34,10 +34,18 @@ def _render_playground(api_base: str):
         st.markdown("### One-shot")
         run_prompt = st.text_area("Prompt", value="현재 디렉토리 파일 목록 보여줘", key="run_prompt")
         run_model = st.text_input("Model (optional)", value="", key="run_model")
+        run_temp = st.slider("Temperature", min_value=0.0, max_value=2.0, value=0.1, step=0.1, key="run_temp")
+        run_lang = st.selectbox("Language", ["ko", "en", "ja"], index=0, key="run_lang")
         if st.button("POST /agent/run", use_container_width=True):
-            body = {"prompt": run_prompt}
+            body = {
+                "prompt": run_prompt,
+                "options": {
+                    "temperature": run_temp,
+                    "language": run_lang,
+                },
+            }
             if run_model.strip():
-                body["model"] = run_model.strip()
+                body["options"]["model"] = run_model.strip()
             try:
                 res = requests.post(f"{api_base}/agent/run", json=body, timeout=120)
                 st.json(res.json())
@@ -48,14 +56,22 @@ def _render_playground(api_base: str):
         st.markdown("### Stream (1-char SSE)")
         stream_prompt = st.text_area("Stream Prompt", value="현재 디렉토리 파일 목록 보여줘", key="stream_prompt")
         stream_model = st.text_input("Stream model (optional)", value="", key="stream_model")
+        stream_temp = st.slider("Stream Temperature", min_value=0.0, max_value=2.0, value=0.1, step=0.1, key="stream_temp")
+        stream_lang = st.selectbox("Stream Language", ["ko", "en", "ja"], index=0, key="stream_lang")
 
         stream_output = st.empty()
         stream_tools = st.empty()
 
         if st.button("POST /agent/run/stream", use_container_width=True):
-            body = {"prompt": stream_prompt}
+            body = {
+                "prompt": stream_prompt,
+                "options": {
+                    "temperature": stream_temp,
+                    "language": stream_lang,
+                },
+            }
             if stream_model.strip():
-                body["model"] = stream_model.strip()
+                body["options"]["model"] = stream_model.strip()
 
             text_buf = ""
             tool_logs: list[str] = []
@@ -106,12 +122,20 @@ def _render_playground(api_base: str):
     session_id = st.text_input("Session ID (optional)", value="")
     chat_msg = st.text_area("Message", value="README 파일 읽어줘")
     chat_model = st.text_input("Chat model (optional)", value="")
+    chat_temp = st.slider("Chat Temperature", min_value=0.0, max_value=2.0, value=0.1, step=0.1, key="chat_temp")
+    chat_lang = st.selectbox("Chat Language", ["ko", "en", "ja"], index=0, key="chat_lang")
     if st.button("POST /agent/chat", use_container_width=True):
-        body = {"message": chat_msg}
+        body = {
+            "message": chat_msg,
+            "options": {
+                "temperature": chat_temp,
+                "language": chat_lang,
+            },
+        }
         if session_id.strip():
             body["session_id"] = session_id.strip()
         if chat_model.strip():
-            body["model"] = chat_model.strip()
+            body["options"]["model"] = chat_model.strip()
         try:
             res = requests.post(f"{api_base}/agent/chat", json=body, timeout=120)
             st.json(res.json())
@@ -140,14 +164,21 @@ def _render_api_docs(api_base: str):
     )
 
     with st.expander("POST /agent/run", expanded=True):
+        st.markdown("**지원 옵션**: `model`, `temperature`, `top_p`, `max_tokens`, `presence_penalty`, `frequency_penalty`, `stop`, `language`, `max_steps`")
         st.markdown("**Request**")
-        st.code('{"prompt":"현재 디렉토리 파일 목록 보여줘","model":"qwen2.5-coder:7b"}', language="json")
+        st.code(
+            '{"prompt":"현재 디렉토리 파일 목록 보여줘","options":{"model":"qwen2.5-coder:7b","temperature":0.1,"language":"ko","top_p":0.9,"max_tokens":512,"max_steps":6}}',
+            language="json",
+        )
         st.markdown("**Response**")
-        st.code('{"output":"...","steps":2,"model":"qwen2.5-coder:7b"}', language="json")
+        st.code(
+            '{"output":"...","steps":2,"model":"qwen2.5-coder:7b","used_config":{"language":"ko","temperature":0.1}}',
+            language="json",
+        )
 
     with st.expander("POST /agent/run/stream", expanded=True):
         st.markdown("**Request**")
-        st.code('{"prompt":"현재 디렉토리 파일 목록 보여줘"}', language="json")
+        st.code('{"prompt":"현재 디렉토리 파일 목록 보여줘","options":{"language":"ko","temperature":0.1}}', language="json")
         st.markdown("**How it works (very short)**")
         st.markdown(
             """
@@ -160,7 +191,7 @@ def _render_api_docs(api_base: str):
         st.markdown("**SSE events (response stream format)**")
         st.code(
             """event: start
-data: {"model":"qwen2.5-coder:7b"}
+data: {"model":"qwen2.5-coder:7b","used_config":{"language":"ko"}}
 
 event: tool
 data: {"name":"list_files"}
@@ -179,7 +210,7 @@ data: [DONE]""",
 import requests
 
 url = "http://localhost:8000/agent/run/stream"
-body = {"prompt": "현재 디렉토리 파일 목록 보여줘"}
+body = {"prompt": "현재 디렉토리 파일 목록 보여줘", "options": {"language": "ko", "temperature": 0.1}}
 
 event = ""
 with requests.post(url, json=body, stream=True, timeout=180) as r:
@@ -211,7 +242,7 @@ with requests.post(url, json=body, stream=True, timeout=180) as r:
 const res = await fetch("http://localhost:8000/agent/run/stream", {
   method: "POST",
   headers: {"Content-Type": "application/json"},
-  body: JSON.stringify({ prompt: "현재 디렉토리 파일 목록 보여줘" })
+  body: JSON.stringify({ prompt: "현재 디렉토리 파일 목록 보여줘", options: { language: "ko", temperature: 0.1 } })
 });
 
 const reader = res.body.getReader();

@@ -71,8 +71,12 @@ def models() -> ModelsResponse:
 def agent_run(payload: AgentRunRequest) -> AgentRunResponse:
     settings = get_settings()
     try:
-        output, steps, used_model, _ = run_agent(payload.prompt, settings, model=payload.model)
-        return AgentRunResponse(output=output, steps=steps, model=used_model)
+        output, steps, used_model, _, used_config = run_agent(
+            payload.prompt,
+            settings,
+            options=payload.options.model_dump(),
+        )
+        return AgentRunResponse(output=output, steps=steps, model=used_model, used_config=used_config)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Agent run failed: {exc}") from exc
 
@@ -83,8 +87,15 @@ def agent_run_stream(payload: AgentRunRequest) -> StreamingResponse:
 
     def event_stream():
         try:
-            stream, used_model = stream_agent_run(payload.prompt, settings, model=payload.model)
-            yield f"event: start\ndata: {json.dumps({'model': used_model}, ensure_ascii=False)}\n\n"
+            stream, used_model, used_config = stream_agent_run(
+                payload.prompt,
+                settings,
+                options=payload.options.model_dump(),
+            )
+            yield (
+                "event: start\n"
+                f"data: {json.dumps({'model': used_model, 'used_config': used_config}, ensure_ascii=False)}\n\n"
+            )
             for event in stream:
                 event_type = event.get("type")
                 if event_type == "char":
@@ -99,7 +110,12 @@ def agent_run_stream(payload: AgentRunRequest) -> StreamingResponse:
         except Exception as exc:
             yield f"event: error\ndata: {json.dumps({'error': str(exc)}, ensure_ascii=False)}\n\n"
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+    headers = {
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+    }
+    return StreamingResponse(event_stream(), media_type="text/event-stream", headers=headers)
 
 
 @app.post("/agent/chat", response_model=ChatResponse)
@@ -109,14 +125,20 @@ def agent_chat(payload: ChatRequest) -> ChatResponse:
     history = sessions.get(session_id, [])
 
     try:
-        output, steps, used_model, updated_messages = run_agent(
+        output, steps, used_model, updated_messages, used_config = run_agent(
             payload.message,
             settings,
-            model=payload.model,
+            options=payload.options.model_dump(),
             history=history,
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Agent chat failed: {exc}") from exc
 
     sessions[session_id] = [msg for msg in updated_messages if msg.get("role") in {"user", "assistant", "tool"}][-20:]
-    return ChatResponse(session_id=session_id, output=output, steps=steps, model=used_model)
+    return ChatResponse(
+        session_id=session_id,
+        output=output,
+        steps=steps,
+        model=used_model,
+        used_config=used_config,
+    )
